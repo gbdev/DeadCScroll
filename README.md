@@ -220,7 +220,7 @@ ldh [rSCY],a
 ld  a,[hl+]
 ldh [rSCX],a
 ```
-It's convenient that the scroll register addresses are next to each other. The data in the buffer is in the same order so as you can see in the code fragment above, this makes writing simple. 
+It's convenient that the scroll register addresses are next to each other. The data in the buffer is in the same order so as you can see in the code fragment above, this makes writing simple.
 
 After the writing is complete, `hl` points to the start of the next data pair. We can store that in another pointer to prevent the HBlank handler from doing a lot of extra work (more about this shortly):
 ```
@@ -316,7 +316,7 @@ The specific image used in the tutorial is light along the bottom so it looks be
 
 ### Smear Off
 
-This is a disappearance transition and the reverse of Smear On. Due to the specific image that was used (i.e. it is light along the bottom), it looks better in this tutorial to have the effect reveal a light screen instead of dark. Again, you would change this to suit your iamge.
+This is a disappearance transition and the reverse of Smear On. Due to the specific image that was used (i.e. it is light along the bottom), it looks better in this tutorial to have the effect reveal a light screen instead of dark. Again, you would change this to suit your image.
 
 ![Smear Off](./gif/smearoff.gif)
 
