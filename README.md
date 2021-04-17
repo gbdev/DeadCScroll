@@ -8,7 +8,7 @@ An assembly tutorial for Game Boy showing how the scroll registers can be exploi
 
 The `SCY`/`SCX` registers have a simple purpose: specify the coordinate of the screen's top-left pixel (or view, if you prefer) somewhere on the 256x256 pixel background map. This is really handy for certain kinds of games like platformers or top-down racing games (though there are LOTS of other kinds of games that benefit from this) where the view is the 'camera' and its position is set once per frame.
 
-When you don't require scrolling, and when your cart boots, `SCY`/`SCX` is typically set to 0,0. When a screen is displayed, it appears normally even though you only set the values once (again, typically, in the VBlank handler). This is because as the screen draws, the PPU automatically adds the value in `LY` ($FF44) to the value in `SCY` in order to know what row of pixels to draw.
+When you don't require scrolling, and when your cart boots, `SCY`/`SCX` is typically set to 0,0. When a screen is displayed, it appears normally even though you only set the values once. This is because as the screen draws, the PPU automatically adds the value in `LY` ($FF44) to the value in `SCY` in order to know what row of pixels to draw.
 
 ```
 SCY value (set once)
@@ -137,7 +137,7 @@ The size of each buffer (indeed, any buffer) depends on two things:
 - how many elements are needed
 - how much data is needed per element
 
-We know that the buffers exist to support the HBlank handler, so the number of elements in the buffer are however many times the HBlank can trigger. We said earlier that the HBlank starts at the end of every screen line, so the number of elements is at least that many. However, remember *when* the HBlank starts: at the *end* of every line. What do we do if we need to change the 0th line (before *any* line has started drawing)? Well, we need to change that value *before* line 0 starts, which means it has to be done in the VBlank handler. And **that** means we need one more element. In short, we need the height of the screen plus one (144+1=145) elements in each buffer.
+We know that the buffers exist to support the HBlank handler, so the number of elements in the buffer are however many times the HBlank can trigger. We said earlier that the HBlank starts at the end of every screen line, so the number of elements is at least that many. However, remember *when* the HBlank starts: at the *end* of every line. What do we do if we need to change the 0th line (before *any* line has started drawing)? Well, we need to change that value *before* line 0 starts, which means it has to be done in the VBlank. And **that** means we need one more element. In short, we need the height of the screen plus one (144+1=145) elements in each buffer.
 
 This tutorial is only concerned with the scroll registers, so it only needs to store 2 values per line: one for `SCY` and one for `SCX`. (You can store more data per line, of course, but this tutorial doesn't require it.)
 
@@ -201,9 +201,9 @@ ld  l,0  ; hl = contents of hFillBuffer ($C000 or $C200)
 
 You'll notice that the name of the pointers have changed. This is because they were moved into HRAM. (Also notice that they don't have to be next to each other in memory.) They were moved to HRAM for a couple of reasons: it allows an optimization in the swapping code (11 cycles vs 28), and it makes the use code slightly faster. There are only 2 bytes used now so that is a better candidate for moving to HRAM than 4 bytes.
 
-### VBlank Handler
+### VBlank
 
-In this system, the VBlank handler is responsible for two things:
+In this system, code in the VBlank is responsible for two things:
 - swapping the pointers
 - setting the data for line 0
 
@@ -222,52 +222,36 @@ ldh [rSCX],a
 ```
 It's convenient that the scroll register addresses are next to each other. The data in the buffer is in the same order so as you can see in the code fragment above, this makes writing simple.
 
-After the writing is complete, `hl` points to the start of the next data pair. We can store that in another pointer to prevent the HBlank handler from doing a lot of extra work (more about this shortly):
-```
-; update hRasterPtr for the first HBlank handler
-ld  a,l
-ldh [hRasterPtr],a
-ld  a,h
-ldh [hRasterPtr+1],a
-```
-
-In the VBlank handler we have swapped the buffers, set the values for line 0, and set a pointer for the HBlank handler to use, so now it's time for the HBlank handler to use it.
-
 ### HBlank Handler
 
-HBlank handlers need to be as fast as possible. This is why we stored a pointer in the VBlank handler: we don't want the HBlank handler to do extra work that it doesn't have to. And in an HBlank handler, **every cycle counts**!
+In an HBlank handler, **every cycle counts**! So don't do any work in there unless it's absolutely necessary. This is a good target for hyper-optimizations -- especially if you are changing VRAM (like palettes) -- so one should design around that optimization.
 
 ```
 HBlankHandler::
-  push af
-  push hl
+  push  af
+  push  hl
 
   ; obtain the pointer to the data pair
-  ld   hl,hRasterPtr
-  ld   a,[hl+]
-  ld   h,[hl]
-  ld   l,a
+  ldh a,[rLY]
+  inc a
+  add a,a ; double the offset since each line uses 2 bytes
+  ld  l,a
+  ldh a,[hDrawBuffer]
+  adc 0
+  ld  h,a  ; hl now points to somewhere in the draw buffer
 
   ; set the scroll registers
-  ld   a,[hl+]
-  ldh  [rSCY],a
-  ld   a,[hl+]
-  ldh  [rSCX],a
+  ld  a,[hl+]
+  ldh [rSCY],a
+  ld  a,[hl+]
+  ldh [rSCX],a
 
-  ; update hRasterPtr for the next HBlank handler
-  ld   a,l
-  ldh  [hRasterPtr],a
-  ld   a,h
-  ldh  [hRasterPtr+1],a
-
-  pop  hl
-  pop  af
+  pop hl
+  pop af
   reti
 ```
 
-This looks quite similar to the work that was done in the VBlank handler. The important part is the updating of `hRasterPtr`. If we didn't have this pointer, we'd have to either maintain an index or use `LY` directly, turn it into a byte offset then add it to the current draw buffer pointer. All of that takes too much time in an HBlank handler.
-
-You could think of it as a memory copy started in the VBlank handler and executed over the time it takes to update the screen.
+Notice that we can take advantage of the fact that there is only 2 bytes per line. We can use `LY` directly and quickly turn it into pointer. (Thanks to rondnelson99 for pointing this out!)
 
 ### Use the fill buffer
 

@@ -107,29 +107,25 @@ VBlankHandler::
 
 ; -------------------------------------------------------------
 SECTION	"HBlank Handler",ROM0[$48]
-HBlankHandler::	; 44 cycles
+HBlankHandler::	; 40 cycles
 	push	af		; 4
 	push	hl		; 4
 
 	;-------------------------------
 	; obtain the pointer to the data pair
-	ld	hl,hRasterPtr	; 3
-	ld	a,[hl+]		; 2
-	ld	h,[hl]		; 2
+	ldh	a,[rLY]		; 3
+	inc	a		; 1
+	add	a,a		; 1	; double the offset since each line uses 2 bytes
 	ld	l,a		; 1
+	ldh	a,[hDrawBuffer]	; 3
+	adc	0		; 2
+	ld	h,a		; 1	; hl now points to somewhere in the draw buffer
 
 	; set the scroll registers
 	ld	a,[hl+]		; 2
 	ldh	[rSCY],a	; 3
 	ld	a,[hl+]		; 2
 	ldh	[rSCX],a	; 3
-
-	;-------------------------------
-	; update hRasterPtr for the next HBlank handler
-	ld	a,l		; 1
-	ldh	[hRasterPtr],a	; 3
-	ld	a,h		; 1
-	ldh	[hRasterPtr+1],a	; 3
 
 	pop	hl		; 3
 	pop	af		; 3
@@ -210,7 +206,7 @@ WaitForVBlankDone::
 .waitloop:
 	halt
 	ld	a,[wVBlankDone]
-	and	1
+	and	a
 	jr	z,.waitloop
 	ret
 
@@ -227,12 +223,6 @@ PrepRaster0::
 	ldh	[rSCY],a
 	ld	a,[hl+]
 	ldh	[rSCX],a
-
-	; update hRasterPtr for the first HBlank handler
-	ld	a,l
-	ldh	[hRasterPtr],a
-	ld	a,h
-	ldh	[hRasterPtr+1],a
 	ret
 
 ; -------------------------------------------------------------
@@ -240,7 +230,7 @@ SECTION	"Tutorial Driver",ROM0
 ProcessPartTransition::
 	; see if the transition flag is set
 	ld	a,[wChangePart]
-	and	1
+	and	a
 	ret	z	; not set, exit early
 	; clear the flag
 	xor	a
@@ -332,12 +322,40 @@ ProcessXSine:
 	; check the flags
 	ld	hl,wFlags
 	ld	a,[hl]
-	cp	2
-	jr	z,.subpart2
-	cp	1
+	and	a
+	jr	z,.subpart0
+	dec	a
 	jr	z,.subpart1
 
+	; ending (diminish the sine up the screen)
+.subpart2
+	call	UpdateXSine2
+
+	; update the table index
+	ld	hl,wTableIndex
+	inc	[hl]
+
+	ld	hl,wProgressLine
+	ld	a,[hl]
+	dec	a
+	jr	z,.subpart2done
+	ld	[hl],a
+	ret
+.subpart2done
+	SetChangePartFlag
+	ret
+
+	; middle (watch the sine for a bit)
+.subpart1
+	call	UpdateXSine1
+
+	; update the table index
+	ld	hl,wTableIndex
+	inc	[hl]
+	ret
+
 	; beginning (progress the sine up the screen)
+.subpart0
 	call	UpdateXSine0
 
 	ld	hl,wProgressLine
@@ -359,33 +377,6 @@ ProcessXSine:
 	; start the sine from 0
 	ld	hl,wTableIndex
 	ld	[hl],a
-	ret
-
-	; middle (watch the sine for a bit)
-.subpart1
-	call	UpdateXSine1
-
-	; update the table index
-	ld	hl,wTableIndex
-	inc	[hl]
-	ret
-
-	; ending (diminish the sine up the screen)
-.subpart2
-	call	UpdateXSine2
-
-	; update the table index
-	ld	hl,wTableIndex
-	inc	[hl]
-
-	ld	hl,wProgressLine
-	ld	a,[hl]
-	dec	a
-	jr	z,.subpart2done
-	ld	[hl],a
-	ret
-.subpart2done
-	SetChangePartFlag
 	ret
 
 UpdateXSine0:
@@ -560,12 +551,40 @@ ProcessYSine:
 	; check the flags
 	ld	hl,wFlags
 	ld	a,[hl]
-	cp	2
-	jr	z,.subpart2
-	cp	1
+	and	a
+	jr	z,.subpart0
+	dec	a
 	jr	z,.subpart1
 
+	; ending (diminish the sine up the screen)
+.subpart2
+	call	UpdateYSine2
+
+	; update the table index
+	ld	hl,wTableIndex
+	inc	[hl]
+
+	ld	hl,wProgressLine
+	ld	a,[hl]
+	dec	a
+	jr	z,.subpart2done
+	ld	[hl],a
+	ret
+.subpart2done
+	SetChangePartFlag
+	ret
+
+	; middle (watch the sine for a bit)
+.subpart1
+	call	UpdateYSine1
+
+	; update the table index
+	ld	hl,wTableIndex
+	inc	[hl]
+	ret
+
 	; beginning (progress the sine up the screen)
+.subpart0
 	call	UpdateYSine0
 
 	ld	hl,wProgressLine
@@ -587,33 +606,6 @@ ProcessYSine:
 	; start the sine from 0
 	ld	hl,wTableIndex
 	ld	[hl],a
-	ret
-
-	; middle (watch the sine for a bit)
-.subpart1
-	call	UpdateYSine1
-
-	; update the table index
-	ld	hl,wTableIndex
-	inc	[hl]
-	ret
-
-	; ending (diminish the sine up the screen)
-.subpart2
-	call	UpdateYSine2
-
-	; update the table index
-	ld	hl,wTableIndex
-	inc	[hl]
-
-	ld	hl,wProgressLine
-	ld	a,[hl]
-	dec	a
-	jr	z,.subpart2done
-	ld	[hl],a
-	ret
-.subpart2done
-	SetChangePartFlag
 	ret
 
 UpdateYSine0:
@@ -791,12 +783,40 @@ ProcessXYSine:
 	; check the flags
 	ld	hl,wFlags
 	ld	a,[hl]
-	cp	2
-	jr	z,.subpart2
-	cp	1
+	and	a
+	jr	z,.subpart0
+	dec	a
 	jr	z,.subpart1
 
+	; ending (diminish the sine up the screen)
+.subpart2
+	call	UpdateXYSine2
+
+	; update the table index
+	ld	hl,wTableIndex
+	inc	[hl]
+
+	ld	hl,wProgressLine
+	ld	a,[hl]
+	dec	a
+	jr	z,.subpart2done
+	ld	[hl],a
+	ret
+.subpart2done
+	SetChangePartFlag
+	ret
+
+	; middle (watch the sine for a bit)
+.subpart1
+	call	UpdateXYSine1
+
+	; update the table index
+	ld	hl,wTableIndex
+	inc	[hl]
+	ret
+
 	; beginning (progress the sine up the screen)
+.subpart0
 	call	UpdateXYSine0
 
 	ld	hl,wProgressLine
@@ -818,33 +838,6 @@ ProcessXYSine:
 	; start the sine from 0
 	ld	hl,wTableIndex
 	ld	[hl],a
-	ret
-
-	; middle (watch the sine for a bit)
-.subpart1
-	call	UpdateXYSine1
-
-	; update the table index
-	ld	hl,wTableIndex
-	inc	[hl]
-	ret
-
-	; ending (diminish the sine up the screen)
-.subpart2
-	call	UpdateXYSine2
-
-	; update the table index
-	ld	hl,wTableIndex
-	inc	[hl]
-
-	ld	hl,wProgressLine
-	ld	a,[hl]
-	dec	a
-	jr	z,.subpart2done
-	ld	[hl],a
-	ret
-.subpart2done
-	SetChangePartFlag
 	ret
 
 UpdateXYSine0:
@@ -1538,8 +1531,6 @@ wDataPtr:	DS	2	; (part use) pointer to somewhere in wRasterTableA/wRasterTableB
 ; high ram
 ;==============================================================
 SECTION	"HRAM Variables",HRAM
-hRasterPtr::	DS	2	; (HBlank handler use) pointer to somewhere in wRasterTableA/wRasterTableB
-
 ; buffer offsets (put in h, l=00)
 ; $C0 = Table A / $C2 = Table B
 hDrawBuffer::	DS	1	; the buffer currently being drawn (the inverse of hFillBuffer)
